@@ -8,6 +8,7 @@ import time
 import openrouteservice
 import yaml
 import tabulate
+from geopy.geocoders import Nominatim
 
 # cache file for geocoded coordinates
 GEOCODE_CACHE_FILE = "geocode_cache.yaml"
@@ -18,6 +19,9 @@ _GEOCODE_CACHE = None
 # counters for API calls
 GEOCODE_API_CALLS = 0
 MATRIX_API_CALLS = 0
+
+geolocator = Nominatim(user_agent="voss-errand-planner")
+
 
 #============================================
 def load_config(path: str) -> dict:
@@ -106,7 +110,12 @@ def _save_geocode_cache() -> None:
 	sorted_cache = {key: value for key, value in sorted_items}
 
 	with open(GEOCODE_CACHE_FILE, "w", encoding="ascii") as cache_file:
-		yaml.safe_dump(sorted_cache, cache_file)
+		yaml.safe_dump(
+			sorted_cache,
+			cache_file,
+			sort_keys=False,
+			default_flow_style=False,
+		)
 
 #============================================
 def geocode_address(
@@ -137,17 +146,22 @@ def geocode_address(
 	GEOCODE_API_CALLS = GEOCODE_API_CALLS + 1
 	print(f"[API] Geocoding address #{GEOCODE_API_CALLS}: {address}")
 
-	time.sleep(random.random())
+	# respect rate limits
+	time.sleep(1.0 + random.random())
+	location = geolocator.geocode(address)
+	if location is None:
+		response = client.pelias_search(
+			text=address,
+			size=1,
+		)
+		feature = response["features"][0]
+		coordinates = feature["geometry"]["coordinates"]
+		longitude = float(coordinates[0])
+		latitude = float(coordinates[1])
+	else:
+		longitude = float(location.longitude)
+		latitude = float(location.latitude)
 
-	response = client.pelias_search(
-		text=address,
-		size=1,
-	)
-
-	feature = response["features"][0]
-	coordinates = feature["geometry"]["coordinates"]
-	longitude = float(coordinates[0])
-	latitude = float(coordinates[1])
 
 	cache[address] = (longitude, latitude)
 	_save_geocode_cache()
