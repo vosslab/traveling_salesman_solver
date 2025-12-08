@@ -10,6 +10,14 @@ import yaml
 import openroute
 import routesolver
 
+# simple ANSI color codes for terminal output
+COLOR_RESET = "\033[0m"
+COLOR_BOLD = "\033[1m"
+COLOR_GREEN = "\033[32m"
+COLOR_CYAN = "\033[36m"
+COLOR_YELLOW = "\033[33m"
+COLOR_MAGENTA = "\033[35m"
+
 #============================================
 def parse_args() -> argparse.Namespace:
 	"""
@@ -98,6 +106,8 @@ def load_locations_yaml(path: str) -> tuple:
 
 	return home_name, home_address, locations
 
+
+
 #============================================
 def main() -> None:
 	"""
@@ -129,6 +139,7 @@ def main() -> None:
 		coords,
 		args.avoid_highways,
 	)
+	openroute.print_duration_matrix(names, matrix)
 
 	tour = routesolver.solve_tsp_hillclimb(
 		matrix,
@@ -139,10 +150,54 @@ def main() -> None:
 	total_seconds = routesolver.tour_length_cycle(matrix, tour)
 	total_minutes = total_seconds / 60.0
 
-	print("Best route:")
-	for index in tour:
-		print(f"{index:2d}  {names[index]}")
-	print(f"Total travel time: {total_minutes:.1f} minutes")
+	# print forward route with per-leg details
+	print(f"{COLOR_BOLD}{COLOR_GREEN}Best route (forward):{COLOR_RESET}")
+	for step_index in range(len(tour) - 1):
+		i_index = tour[step_index]
+		j_index = tour[step_index + 1]
+		leg_seconds = matrix[i_index, j_index]
+		leg_minutes = leg_seconds / 60.0
+		print(
+			f"  {i_index:2d} {names[i_index]} -> "
+			f"{j_index:2d} {names[j_index]}: "
+			f"{leg_minutes:.1f} minutes",
+		)
+
+	print(
+		f"{COLOR_CYAN}Forward route total travel time: "
+		f"{total_minutes:.1f} minutes{COLOR_RESET}",
+	)
+
+	# compute and report reverse route with per-leg details
+	reverse_tour = routesolver.compute_reverse_cycle(tour)
+	reverse_seconds = routesolver.tour_length_cycle(matrix, reverse_tour)
+	reverse_minutes = reverse_seconds / 60.0
+
+	print(f"{COLOR_BOLD}{COLOR_MAGENTA}Reverse route:{COLOR_RESET}")
+	for step_index in range(len(reverse_tour) - 1):
+		i_index = reverse_tour[step_index]
+		j_index = reverse_tour[step_index + 1]
+		leg_seconds = matrix[i_index, j_index]
+		leg_minutes = leg_seconds / 60.0
+		print(
+			f"  {i_index:2d} {names[i_index]} -> "
+			f"{j_index:2d} {names[j_index]}: "
+			f"{leg_minutes:.1f} minutes",
+		)
+
+	print(
+		f"{COLOR_CYAN}Reverse route total travel time: "
+		f"{reverse_minutes:.1f} minutes{COLOR_RESET}",
+	)
+
+	# report API call counts
+	geocode_calls, matrix_calls = openroute.get_api_call_counts()
+	total_calls = geocode_calls + matrix_calls
+
+	print(f"{COLOR_BOLD}{COLOR_YELLOW}API call summary:{COLOR_RESET}")
+	print(f"  Geocoding calls: {geocode_calls}")
+	print(f"  Matrix calls:    {matrix_calls}")
+	print(f"  Total API calls: {total_calls}")
 
 #============================================
 if __name__ == "__main__":

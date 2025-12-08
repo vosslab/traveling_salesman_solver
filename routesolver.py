@@ -13,18 +13,15 @@ def all_pairs(size: int, shuffle=random.shuffle):
 		shuffle: Function to shuffle index order, or None for deterministic order.
 
 	Returns:
-		Generator that yields (i, j) index pairs.
+		Generator that yields (i_index, j_index) index pairs.
 	"""
-	# build index ranges
 	r1 = list(range(size))
 	r2 = list(range(size))
 
-	# shuffle ranges if a shuffle function is provided
 	if shuffle:
 		shuffle(r1)
 		shuffle(r2)
 
-	# yield all index pairs
 	for i_index in r1:
 		for j_index in r2:
 			yield (i_index, j_index)
@@ -44,22 +41,12 @@ def reversed_sections(tour: list):
 	Returns:
 		Generator that yields modified tours with reversed sections.
 	"""
-	# iterate over all index pairs to reverse sections
 	for i_index, j_index in all_pairs(len(tour)):
-		if i_index != j_index:
-			# create a copy of the tour
+		if i_index < j_index:
 			copy_tour = tour[:]
-
-			# reverse the section between i_index and j_index
-			if i_index < j_index:
-				copy_tour[i_index:j_index + 1] = reversed(
-					tour[i_index:j_index + 1],
-				)
-			else:
-				copy_tour[i_index + 1:] = reversed(tour[:j_index])
-				copy_tour[:j_index] = reversed(tour[i_index + 1:])
-
-			# skip if there is no change
+			copy_tour[i_index:j_index + 1] = reversed(
+				tour[i_index:j_index + 1],
+			)
 			if copy_tour != tour:
 				yield copy_tour
 
@@ -74,21 +61,22 @@ def shift_cities(tour: list):
 	Returns:
 		Generator that yields modified tours with shifted cities.
 	"""
-	# iterate over all index pairs to shift cities
-	for i_index, j_index in all_pairs(len(tour)):
-		if i_index != j_index:
-			# copy the tour up to the first index
-			copy_tour = tour[0:i_index]
+	num_cities = len(tour)
 
-			# extend with cities between i_index and j_index
-			copy_tour.extend(tour[i_index + 1:j_index])
+	for i_index in range(num_cities):
+		for j_index in range(num_cities):
+			if i_index == j_index:
+				continue
 
-			# append the shifted city
-			copy_tour.append(tour[i_index])
+			copy_tour = tour[:]
+			city = copy_tour.pop(i_index)
 
-			# extend with remaining cities
-			copy_tour.extend(tour[j_index:len(tour)])
+			if j_index > i_index:
+				insert_index = j_index - 1
+			else:
+				insert_index = j_index
 
+			copy_tour.insert(insert_index, city)
 			yield copy_tour
 
 #============================================
@@ -97,19 +85,15 @@ def tour_length_cycle(matrix: dict, tour: list) -> float:
 	Compute total cycle length for a tour based on a matrix of costs.
 
 	Args:
-		matrix: Dictionary mapping (i, j) to travel cost.
+		matrix: Dictionary mapping (i_index, j_index) to travel cost.
 		tour: List of city indices representing a cycle.
 
 	Returns:
 		Total cost of the tour as a float.
 	"""
-	# initialize total distance
 	total_cost = 0.0
-
-	# number of cities in the tour
 	num_cities = len(tour)
 
-	# sum cost for each edge in the cycle
 	for i_index in range(num_cities):
 		j_index = (i_index + 1) % num_cities
 		city_i = tour[i_index]
@@ -120,7 +104,10 @@ def tour_length_cycle(matrix: dict, tour: list) -> float:
 	return total_cost
 
 # Simple assertion test for tour_length_cycle
-test_matrix = {(0, 1): 1.0, (1, 0): 1.0}
+test_matrix = {
+	(0, 1): 1.0,
+	(1, 0): 1.0,
+}
 assert tour_length_cycle(test_matrix, [0, 1]) == 2.0
 
 #============================================
@@ -145,37 +132,26 @@ def hillclimb(
 		- best_score: Best objective score found.
 		- best_tour: Best tour found.
 	"""
-	# create an initial tour
 	best_tour = init_function()
-
-	# compute initial score
 	best_score = objective_function(best_tour)
-
-	# count evaluations
 	num_evaluations = 1
 
-	# keep searching until the evaluation limit is reached
 	while num_evaluations < max_evaluations:
-		# assume no improving move is found
 		move_made = False
 
-		# examine all neighbors
 		for candidate_tour in move_operator(best_tour):
 			if num_evaluations >= max_evaluations:
 				break
 
-			# evaluate candidate
 			candidate_score = objective_function(candidate_tour)
 			num_evaluations = num_evaluations + 1
 
-			# accept first improving move
 			if candidate_score > best_score:
 				best_tour = candidate_tour
 				best_score = candidate_score
 				move_made = True
 				break
 
-		# stop if no improving move is found
 		if not move_made:
 			break
 
@@ -206,12 +182,10 @@ def hillclimb_and_restart(
 		- best_score: Best objective score found across all runs.
 		- best_tour: Best tour found across all runs.
 	"""
-	# initialize best tour and score
 	best_tour = None
 	best_score = float("-inf")
 	total_evaluations = 0
 
-	# run hillclimb multiple times
 	for iteration_index in range(max_iterations):
 		evaluations, score, tour = hillclimb(
 			init_function,
@@ -221,7 +195,6 @@ def hillclimb_and_restart(
 		)
 		total_evaluations = total_evaluations + evaluations
 
-		# update global best if this run improved it
 		if best_tour is None or score > best_score:
 			best_tour = tour
 			best_score = score
@@ -241,16 +214,12 @@ def normalize_home_first(tour: list, home: int) -> list:
 	Returns:
 		New tour list with home at index 0.
 	"""
-	# find the position of home in the tour
 	home_index = tour.index(home)
-
-	# rotate the tour so that home is first
-	rotated = tour[home_index:] + tour[1:home_index + 1]
-
+	rotated = tour[home_index:] + tour[:home_index]
 	return rotated
 
 # Simple assertion test for normalize_home_first
-assert normalize_home_first([2, 0, 1], 0)[0] == 0
+assert normalize_home_first([2, 0, 1], 0) == [0, 1, 2]
 
 #============================================
 def solve_tsp_hillclimb(
@@ -262,18 +231,16 @@ def solve_tsp_hillclimb(
 	Solve a TSP-like routing problem using hillclimb with restarts.
 
 	Args:
-		matrix: Dictionary mapping (i, j) to travel cost.
+		matrix: Dictionary mapping (i_index, j_index) to travel cost.
 		max_iter: Number of hillclimb restarts.
 		max_eval: Maximum evaluations per hillclimb run.
 
 	Returns:
 		List of city indices representing a tour that starts and ends at home.
 	"""
-	# infer the number of cities from the matrix keys
 	city_indices = {i_index for (i_index, _) in matrix.keys()}
 	num_cities = len(city_indices)
 
-	# define function to create a random initial tour
 	def init_tour():
 		"""
 		Create a random tour visiting all cities once.
@@ -285,7 +252,6 @@ def solve_tsp_hillclimb(
 		random.shuffle(tour)
 		return tour
 
-	# define objective as negative tour length (maximize score, minimize length)
 	def fitness(tour: list) -> float:
 		"""
 		Compute objective score for a tour.
@@ -300,7 +266,6 @@ def solve_tsp_hillclimb(
 		score = -cost
 		return score
 
-	# first stage: reversed sections hillclimb with restarts
 	_, score_stage_one, best_tour = hillclimb_and_restart(
 		init_tour,
 		reversed_sections,
@@ -309,7 +274,6 @@ def solve_tsp_hillclimb(
 		max_eval,
 	)
 
-	# second stage: shift cities hillclimb starting from best tour
 	def init_best():
 		"""
 		Return a copy of the best tour found so far.
@@ -328,17 +292,39 @@ def solve_tsp_hillclimb(
 		max_eval,
 	)
 
-	# choose the better of the two stages
 	if score_stage_two > score_stage_one:
 		final_tour_base = improved_tour
 	else:
 		final_tour_base = best_tour
 
-	# normalize so that home (index 0) is first
 	final_tour = normalize_home_first(final_tour_base, 0)
 
-	# ensure the tour returns to home explicitly
 	if final_tour[-1] != 0:
 		final_tour.append(0)
 
 	return final_tour
+
+#============================================
+def compute_reverse_cycle(tour: list) -> list:
+	"""
+	Compute the fully reversed cycle for a tour starting and ending at home.
+
+	Args:
+		tour: List of city indices, for example [0, 3, 2, 1, 0].
+
+	Returns:
+		Reversed tour list such as [0, 1, 2, 3, 0].
+	"""
+	inner = tour[:-1]
+	home_index = inner[0]
+	remainder = inner[1:]
+	rev_remainder = list(reversed(remainder))
+
+	reverse_tour = [home_index]
+	reverse_tour.extend(rev_remainder)
+	reverse_tour.append(home_index)
+
+	return reverse_tour
+
+# Simple assertion test for compute_reverse_cycle
+assert compute_reverse_cycle([0, 1, 2, 0]) == [0, 2, 1, 0]
