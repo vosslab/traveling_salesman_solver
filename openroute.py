@@ -8,6 +8,12 @@ import time
 import openrouteservice
 import yaml
 
+# cache file for geocoded coordinates
+GEOCODE_CACHE_FILE = "geocode_cache.yaml"
+
+# in-memory cache, loaded on first use
+_GEOCODE_CACHE = None
+
 #============================================
 def load_config(path: str) -> dict:
 	"""
@@ -19,11 +25,8 @@ def load_config(path: str) -> dict:
 	Returns:
 		Dictionary with configuration values.
 	"""
-	# open the YAML configuration file
 	with open(path, "r", encoding="ascii") as config_file:
 		config = yaml.safe_load(config_file)
-
-	# return the configuration dictionary
 	return config
 
 # Simple assertion test for load_config
@@ -41,14 +44,50 @@ def make_client(api_key: str) -> openrouteservice.Client:
 	Returns:
 		OpenRouteService Client instance.
 	"""
-	# create the OpenRouteService client
 	client = openrouteservice.Client(key=api_key)
-
-	# return the client object
 	return client
 
 # Simple assertion test for make_client
 assert callable(make_client)
+
+#============================================
+def _load_geocode_cache() -> dict:
+	"""
+	Load the geocode cache from disk if it has not been loaded.
+
+	Returns:
+		Dictionary mapping address strings to (longitude, latitude) pairs.
+	"""
+	global _GEOCODE_CACHE
+
+	if _GEOCODE_CACHE is not None:
+		return _GEOCODE_CACHE
+
+	try:
+		with open(GEOCODE_CACHE_FILE, "r", encoding="ascii") as cache_file:
+			data = yaml.safe_load(cache_file)
+	except FileNotFoundError:
+		data = None
+
+	if data is None:
+		data = {}
+
+	_GEOCODE_CACHE = data
+	return _GEOCODE_CACHE
+
+#============================================
+def _save_geocode_cache() -> None:
+	"""
+	Write the current geocode cache to disk.
+
+	Returns:
+		None.
+	"""
+	if _GEOCODE_CACHE is None:
+		return
+
+	with open(GEOCODE_CACHE_FILE, "w", encoding="ascii") as cache_file:
+		yaml.safe_dump(_GEOCODE_CACHE, cache_file)
 
 #============================================
 def geocode_address(
@@ -56,7 +95,7 @@ def geocode_address(
 	address: str,
 ) -> tuple:
 	"""
-	Geocode a postal address to longitude and latitude.
+	Geocode a postal address to longitude and latitude with caching.
 
 	Args:
 		client: OpenRouteService Client instance.
@@ -65,22 +104,28 @@ def geocode_address(
 	Returns:
 		Tuple with (longitude, latitude) as floats.
 	"""
-	# sleep briefly to avoid overloading the API
+	cache = _load_geocode_cache()
+
+	if address in cache:
+		longitude, latitude = cache[address]
+		location_tuple = (float(longitude), float(latitude))
+		return location_tuple
+
 	time.sleep(random.random())
 
-	# send geocoding request to OpenRouteService
 	response = client.pelias_search(
 		text=address,
 		size=1,
 	)
 
-	# extract the first feature and its coordinates
 	feature = response["features"][0]
 	coordinates = feature["geometry"]["coordinates"]
-	longitude = coordinates[0]
-	latitude = coordinates[1]
+	longitude = float(coordinates[0])
+	latitude = float(coordinates[1])
 
-	# return the longitude and latitude
+	cache[address] = (longitude, latitude)
+	_save_geocode_cache()
+
 	location_tuple = (longitude, latitude)
 	return location_tuple
 
@@ -105,29 +150,23 @@ def build_coords_with_home(
 		- names: List of location names with home at index 0.
 		- coords: List of (longitude, latitude) pairs with home at index 0.
 	"""
-	# geocode the home address
 	home_longitude, home_latitude = geocode_address(client, home_address)
 
-	# initialize names and coordinates with home at index 0
 	names = [home_name]
 	coords = [(home_longitude, home_latitude)]
 
-	# iterate over all other locations and geocode them
 	for location in locations:
 		location_name = location["name"]
 		location_address = location["address"]
 
-		# geocode the location address
 		location_longitude, location_latitude = geocode_address(
 			client,
 			location_address,
 		)
 
-		# append the location name and coordinates
 		names.append(location_name)
 		coords.append((location_longitude, location_latitude))
 
-	# return names and coordinates
 	result_tuple = (names, coords)
 	return result_tuple
 
@@ -148,15 +187,12 @@ def ors_duration_matrix(
 	Returns:
 		Dictionary mapping (i, j) index pairs to duration values in seconds.
 	"""
-	# set route options, possibly avoiding highways
 	options = {}
 	if avoid_highways:
 		options["avoid_features"] = ["highways"]
 
-	# sleep briefly to avoid overloading the API
 	time.sleep(random.random())
 
-	# request a duration matrix from OpenRouteService
 	response = client.distance_matrix(
 		locations=coords,
 		profile="driving-car",
@@ -166,16 +202,13 @@ def ors_duration_matrix(
 		options=options,
 	)
 
-	# extract matrix of durations in seconds
 	durations = response["durations"]
 
-	# convert list-of-lists into a dictionary keyed by index pairs
 	matrix = {}
 	num_points = len(durations)
 	for i_index in range(num_points):
 		for j_index in range(num_points):
 			duration_seconds = durations[i_index][j_index]
-			matrix[i_index, j_index] = duration_seconds
+			matrix[i_index, j_index] = float(duration_seconds)
 
-	# return the duration matrix dictionary
 	return matrix
